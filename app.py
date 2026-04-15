@@ -1,14 +1,12 @@
 import streamlit as st
 import requests
-import json
 from openai import OpenAI
 
 # 页面配置
 st.set_page_config(page_title="PM求职情报精炼机", layout="wide")
-st.title("🚀 PM求职情报精炼机")
-st.caption("粘贴小红书内容，自动同步至飞书多维表格卡片视图")
+st.title("🚀 PM求职情报精炼机 (精准修正版)")
 
-# 从 Streamlit Secrets 获取配置（下一步会教你配置）
+# 从 Secrets 获取配置
 FEISHU_APP_ID = st.secrets["FEISHU_APP_ID"]
 FEISHU_APP_SECRET = st.secrets["FEISHU_APP_SECRET"]
 FEISHU_APP_TOKEN = st.secrets["FEISHU_APP_TOKEN"]
@@ -21,36 +19,10 @@ def get_feishu_token():
     r = requests.post(url, json=payload)
     return r.json().get("app_access_token")
 
-# 获取飞书表格 ID (自动匹配名为"求职库"的表)
-def get_table_id(token):
-    url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_APP_TOKEN}/tables"
-    headers = {"Authorization": f"Bearer {token}"}
-    r = requests.get(url, headers=headers)
-    tables = r.json().get("data", {}).get("items", [])
-    for t in tables:
-        if t['name'] == "求职库":
-            return t['table_id']
-    return tables[0]['table_id'] if tables else None
-
 # DeepSeek 核心分析逻辑
 def analyze_content(title, content, comments):
     client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
-    
-    prompt = f"""
-    你是一位资深产品经理面试官和职业导师。请分析以下小红书求职贴内容。
-    
-    标题：{title}
-    正文：{content}
-    精选评论：{comments}
-    
-    请输出以下三个部分，要求专业、刻薄但实用：
-    1. 【简历/项目拆解】：提取项目核心逻辑，指出其写法亮点或改进点。
-    2. 【面经分析】：如果是面试贴，提取考察知识点、面试官意图及高分思路。
-    3. 【能力补齐建议】：针对该岗位，我（读者）可以从哪个具体动作进行复现或提升。
-    
-    注意：请直接输出内容，不要带“好的，我明白了”之类的废话。
-    """
-    
+    prompt = f"你是一位资深PM面试官。请分析：标题：{title}\n正文：{content}\n评论：{comments}\n输出：【分析1】、【分析2】、【分析3】。不要废话。"
     response = client.chat.completions.create(
         model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
@@ -62,42 +34,44 @@ def analyze_content(title, content, comments):
 with st.sidebar:
     st.header("1. 输入内容")
     post_title = st.text_input("帖子简短标题")
-    post_tags = st.multiselect("岗位标签", ["产品经理", "AI产品", "B端产品", "数据产品", "实习", "校招", "社招"])
+    # 强制将标签转为字符串，防止飞书类型匹配错误
+    post_tags = st.text_input("岗位标签 (多个用逗号隔开)", "产品经理")
     post_url = st.text_input("原贴链接")
 
 # 主界面输入
 col1, col2 = st.columns(2)
 with col1:
-    post_content = st.text_area("2. 粘贴帖子正文", height=300)
+    post_content = st.text_area("2. 粘贴帖子正文", height=200)
 with col2:
-    post_comments = st.text_area("3. 粘贴精选评论", height=300)
+    post_comments = st.text_area("3. 粘贴精选评论", height=200)
 
 if st.button("✨ 开始分析并同步至飞书"):
     if not post_content:
         st.error("请输入正文内容")
     else:
-        with st.spinner("AI 正在深度思考并同步中..."):
+        with st.spinner("AI 分析中并尝试写入..."):
             try:
                 # 1. AI 分析
                 analysis_result = analyze_content(post_title, post_content, post_comments)
                 
-                # 2. 写入飞书
+                # 2. 准备写入飞书
                 token = get_feishu_token()
-                table_id = "tblXQp5ehczgYOJZ"
+                # 【关键修正】：这里直接填入你截图里的 Table ID，不再动态获取
+                table_id = "tblXQp5ehczgYOJZ" 
                 
                 fs_url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_APP_TOKEN}/tables/{table_id}/records"
                 headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                 
-                # 简单的文本切分处理（示例）
-                parts = analysis_result.split('\n\n')
-                res_resume = parts[0] if len(parts) > 0 else ""
-                res_interview = parts[1] if len(parts) > 1 else ""
-                res_gap = parts[2] if len(parts) > 2 else ""
+                # AI 结果简单拆分
+                parts = analysis_result.split('【')
+                res_resume = "【" + parts[1] if len(parts) > 1 else analysis_result
+                res_interview = "【" + parts[2] if len(parts) > 2 else ""
+                res_gap = "【" + parts[3] if len(parts) > 3 else ""
 
                 data = {
                     "fields": {
                         "帖子标题": post_title,
-                        "岗位标签": post_tags,
+                        "岗位标签": post_tags, # 现在是文本格式，更稳
                         "原始正文": post_content,
                         "精选评论": post_comments,
                         "AI-简历/项目拆解": res_resume,
@@ -108,12 +82,14 @@ if st.button("✨ 开始分析并同步至飞书"):
                 }
                 
                 r = requests.post(fs_url, headers=headers, json=data)
+                resp_json = r.json()
                 
-                if r.status_code == 200:
-                    st.success("🎉 同步成功！快去飞书多维表格查看你的精美卡片吧！")
+                if r.status_code == 200 and resp_json.get("code") == 0:
+                    st.success("🎉 写入成功！请刷新飞书页面查看。")
                     st.markdown("### AI 分析预览")
                     st.write(analysis_result)
                 else:
-                    st.error(f"同步失败: {r.json().get('msg')}")
+                    st.error(f"飞书拒绝了写入请求！错误信息：{resp_json.get('msg')}")
+                    st.json(resp_json) # 显示完整的错误报告
             except Exception as e:
-                st.error(f"发生错误: {str(e)}")
+                st.error(f"发生程序错误: {str(e)}")
