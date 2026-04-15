@@ -22,7 +22,20 @@ def get_feishu_token():
 # DeepSeek 分析
 def analyze_content(title, content, comments):
     client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
-    prompt = f"你是一位资深PM面试官。请分析：标题：{title}\n正文：{content}\n评论：{comments}\n输出：【分析1】、【分析2】、【分析3】。不要废话。"
+    prompt = f"""
+    你是一位资深产品经理面试官和职业导师。请分析以下小红书求职贴内容。
+    
+    标题：{title}
+    正文：{content}
+    精选评论：{comments}
+    
+    请输出以下三个部分，要求专业、刻薄但实用：
+    1. 【简历/项目拆解】：提取项目核心逻辑，指出其写法亮点或改进点。
+    2. 【面经分析】：如果是面试贴，提取考察知识点、面试官意图及高分思路。
+    3. 【能力补齐建议】：针对该岗位，我（读者）可以从哪个具体动作进行复现或提升。
+    
+    注意：请直接输出内容，不要带“好的，我明白了”之类的废话。
+    """
     response = client.chat.completions.create(
         model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
