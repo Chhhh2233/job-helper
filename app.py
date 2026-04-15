@@ -83,7 +83,7 @@ if st.button("✨ 开始分析并同步至飞书"):
                 
                 # 2. 写入飞书
                 token = get_feishu_token()
-                table_id = get_table_id(token)
+                table_id = "tblXQp5ehczgYOJZ"
                 
                 fs_url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_APP_TOKEN}/tables/{table_id}/records"
                 headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
