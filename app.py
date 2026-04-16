@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 from openai import OpenAI
+import re
 
 # 页面配置
 st.set_page_config(page_title="PM求职情报精炼机", layout="wide")
@@ -96,11 +97,24 @@ if st.button("✨ 开始分析并同步至飞书"):
                 fs_url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_APP_TOKEN}/tables/{table_id}/records"
                 headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                 
-                # 结果拆分
-                parts = analysis_result.split('【')
-                res_resume = "【" + parts[1] if len(parts) > 1 else analysis_result
-                res_interview = "【" + parts[2] if len(parts) > 2 else ""
-                res_gap = "【" + parts[3] if len(parts) > 3 else ""
+                # 结果拆分 (适配新版 Prompt 的 ## 1, 2, 3, 4 结构)
+                # 使用正则表达式切分，兼容 "## 1." 或 "## 1、" 等大模型常见的轻微符号变体
+                pattern = r'(?:^|\n)##\s*[1-4][.、]'
+                parts = re.split(pattern, analysis_result)
+                
+                # 正常情况下，parts 长度至少为 5 (parts[0]是前言或空，1~4分别对应四个模块)
+                if len(parts) >= 5:
+                    # 将模块1(意图)和模块2(策略)合并放入面经分析列
+                    res_interview = "## 1." + parts[1].strip() + "\n\n## 2." + parts[2].strip()
+                    # 将模块3(SOP推导)放入简历/项目拆解列
+                    res_resume = "## 3." + parts[3].strip()
+                    # 将模块4(降维打击建议)放入能力补齐列
+                    res_gap = "## 4." + parts[4].strip()
+                else:
+                    # 防呆/保底机制：如果大模型偶发性没有按 1/2/3/4 格式输出
+                    res_interview = analysis_result
+                    res_resume = "⚠️ 内容排版变动，请在【AI-面经分析】列查看完整提取结果。"
+                    res_gap = "⚠️ 内容排版变动，请在【AI-面经分析】列查看完整提取结果。"
 
                 # 【重要修正】：所有字段全部发送纯字符串，确保兼容飞书的“文本”列
                 data = {
